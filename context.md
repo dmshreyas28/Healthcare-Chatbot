@@ -127,5 +127,3 @@ When generating responses:
 - Safety and correctness are higher priority than feature richness
 - The chatbot is informational, not diagnostic
 - The system will be demonstrated live
-
-Copilot should generate code aligned with these constraints.
