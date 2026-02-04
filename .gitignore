@@ -49,3 +49,8 @@ package-lock.json
 vector_store/
 chroma_db/
 faiss_index/
+
+# LLM Models (too large for git)
+*.gguf
+*.bin
+Modelfile

@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     """Application settings loaded from environment variables"""
     
     # LLM Configuration
-    llm_provider: Literal["openai", "anthropic"] = os.getenv("LLM_PROVIDER", "openai")
+    llm_provider: Literal["openai", "anthropic", "ollama"] = os.getenv("LLM_PROVIDER", "ollama")
     openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
     anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
     
@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     
     # Anthropic Models
     anthropic_model: str = os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
+    
+    # Ollama Configuration
+    ollama_base_url: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    ollama_model: str = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
     
     # RAG Configuration
     enable_rag: bool = os.getenv("ENABLE_RAG", "false").lower() == "true"

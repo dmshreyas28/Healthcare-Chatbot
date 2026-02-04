@@ -1,9 +1,10 @@
 """
-LLM Service - Handles interaction with OpenAI and Anthropic APIs
+LLM Service - Handles interaction with OpenAI, Anthropic, and Ollama APIs
 """
 from typing import List, Dict
 from openai import OpenAI
 from anthropic import Anthropic
+import httpx
 from config import settings
 from prompts import get_system_prompt
 
@@ -26,6 +27,10 @@ class LLMService:
                 raise ValueError("Anthropic API key not found in environment variables")
             self.anthropic_client = Anthropic(api_key=settings.anthropic_api_key)
             self.model = settings.anthropic_model
+        
+        elif self.provider == "ollama":
+            self.ollama_base_url = settings.ollama_base_url
+            self.model = settings.ollama_model
         
         else:
             raise ValueError(f"Unsupported LLM provider: {self.provider}")
@@ -75,6 +80,12 @@ Please answer based on the provided context."""
             )
         elif self.provider == "anthropic":
             return await self._get_anthropic_response(
+                system_prompt, 
+                enhanced_message, 
+                conversation_history
+            )
+        elif self.provider == "ollama":
+            return await self._get_ollama_response(
                 system_prompt, 
                 enhanced_message, 
                 conversation_history
@@ -140,6 +151,49 @@ Please answer based on the provided context."""
         
         except Exception as e:
             raise Exception(f"Anthropic API error: {str(e)}")
+    
+    async def _get_ollama_response(
+        self, 
+        system_prompt: str, 
+        user_message: str,
+        conversation_history: List[Dict[str, str]]
+    ) -> str:
+        """Get response from Ollama API"""
+        try:
+            # Build messages array
+            messages = []
+            
+            # Add system message
+            messages.append({"role": "system", "content": system_prompt})
+            
+            # Add conversation history
+            messages.extend(conversation_history)
+            
+            # Add current user message
+            messages.append({"role": "user", "content": user_message})
+            
+            # Call Ollama API
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(
+                    f"{self.ollama_base_url}/api/chat",
+                    json={
+                        "model": self.model,
+                        "messages": messages,
+                        "stream": False,
+                        "options": {
+                            "temperature": 0.7,
+                            "num_predict": 1000
+                        }
+                    }
+                )
+                response.raise_for_status()
+                result = response.json()
+                print(f"Ollama response: {result}")  # Debug logging
+                return result["message"]["content"]
+        
+        except Exception as e:
+            print(f"Ollama error: {str(e)}")  # Debug logging
+            raise Exception(f"Ollama API error: {str(e)}")
 
 
 # Global LLM service instance
