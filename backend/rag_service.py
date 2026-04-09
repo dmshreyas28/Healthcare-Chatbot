@@ -3,17 +3,31 @@ RAG Service - Handles document retrieval and embedding generation
 """
 import os
 from typing import List
-import chromadb
-from chromadb.config import Settings as ChromaSettings
-from sentence_transformers import SentenceTransformer
+try:
+    import chromadb
+    from chromadb.config import Settings as ChromaSettings
+    from sentence_transformers import SentenceTransformer
+    HAS_RAG_DEPS = True
+except ImportError:
+    HAS_RAG_DEPS = False
+
 from config import settings
 
 
 class RAGService:
     """Service for Retrieval-Augmented Generation"""
+
+    RAG_TOPIC_KEYWORDS = [
+        "dolo", "crocin", "combiflam", "disprin", "zincovit",
+        "aiims", "phc", "chc", "ayushman", "cghs", "esi",
+        "dengue", "malaria", "typhoid", "tuberculosis", "tb",
+        "ayurveda", "ayush", "ashwagandha", "triphala", "tulsi", "turmeric",
+        "cdsco", "schedule h", "schedule x",
+        "108", "102", "government hospital", "district hospital",
+    ]
     
     def __init__(self):
-        self.enabled = settings.enable_rag
+        self.enabled = settings.enable_rag and HAS_RAG_DEPS
         
         if not self.enabled:
             return
@@ -87,6 +101,12 @@ class RAGService:
             return "\n\n".join(contexts)
         
         return ""
+
+    def should_use_rag(self, query: str) -> bool:
+        """Use RAG only when the query matches known topics in our KB."""
+        if not self.enabled:
+            return False
+        return True
     
     def get_collection_count(self) -> int:
         """Get the number of documents in the collection"""

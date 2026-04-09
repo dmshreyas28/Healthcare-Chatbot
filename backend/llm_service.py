@@ -1,6 +1,7 @@
 """
 LLM Service - Handles interaction with OpenAI, Anthropic, and Ollama APIs
 """
+import re
 from typing import List, Dict
 from openai import OpenAI
 from anthropic import Anthropic
@@ -11,6 +12,30 @@ from prompts import get_system_prompt
 
 class LLMService:
     """Service for interacting with Large Language Models"""
+
+    _PROMPT_ECHO_MARKERS = [
+        "you are a healthcare information assistant",
+        "important guidelines:",
+        "safety rules:",
+        "follow these rules:",
+        "context from trusted medical sources:",
+        "user question:",
+        "please answer based on the provided context",
+    ]
+
+    _META_RESPONSE_MARKERS = [
+        "your answer is correct",
+        "please continue providing accurate responses",
+        "1. only use information from the provided context",
+        "respond directly to the user question in plain language",
+    ]
+
+    _DIAGNOSIS_PHRASES = [
+        "accurately diagnose",
+        "for me to diagnose",
+        "diagnose it",
+        "i can diagnose",
+    ]
     
     def __init__(self):
         self.provider = settings.llm_provider
@@ -59,37 +84,133 @@ class LLMService:
         
         # Get system prompt
         system_prompt = get_system_prompt(use_rag=use_rag)
-        
-        # Add RAG context if provided
-        if use_rag and context:
-            enhanced_message = f"""Context from trusted medical sources:
-{context}
+        enhanced_message = self._build_user_message(user_message, use_rag, context)
 
-User Question: {user_message}
-
-Please answer based on the provided context."""
-        else:
-            enhanced_message = user_message
-        
         # Route to appropriate provider
+        raw_response = ""
         if self.provider == "openai":
-            return await self._get_openai_response(
+            raw_response = await self._get_openai_response(
                 system_prompt, 
                 enhanced_message, 
                 conversation_history
             )
         elif self.provider == "anthropic":
-            return await self._get_anthropic_response(
+            raw_response = await self._get_anthropic_response(
                 system_prompt, 
                 enhanced_message, 
                 conversation_history
             )
         elif self.provider == "ollama":
-            return await self._get_ollama_response(
+            raw_response = await self._get_ollama_response(
                 system_prompt, 
                 enhanced_message, 
                 conversation_history
             )
+        else:
+            raise ValueError(f"Unsupported LLM provider: {self.provider}")
+
+        return self._sanitize_response(raw_response)
+
+    def _build_user_message(self, user_message: str, use_rag: bool, context: str = None) -> str:
+        """Build a user message that minimizes prompt echo behavior."""
+        if use_rag and context:
+            return f"""Use only the retrieved medical context below.
+Retrieved medical context:
+{context}
+
+User question:
+{user_message}
+
+Give a direct user-facing answer in plain language. Do not repeat instructions."""
+
+        return user_message
+
+    def _sanitize_response(self, response: str) -> str:
+        """Normalize model output and guard against prompt echo / unsafe phrasing."""
+        if not response:
+            return (
+                "I could not generate a reliable response right now. "
+                "Please try rephrasing your question."
+            )
+
+        cleaned = response.strip().strip('"').strip()
+        cleaned = self._strip_prompt_echo_lines(cleaned)
+
+        lowered = cleaned.lower()
+        if any(phrase in lowered for phrase in self._DIAGNOSIS_PHRASES):
+            return (
+                "I cannot diagnose conditions, but I can share general health information. "
+                "Please consult a qualified healthcare professional for personal advice."
+            )
+
+        marker_hits = sum(1 for marker in self._PROMPT_ECHO_MARKERS if marker in lowered)
+        if marker_hits >= 2:
+            return (
+                "I could not generate a clear answer from trusted context this time. "
+                "Please rephrase your question, and consult a qualified healthcare professional "
+                "for personal medical advice."
+            )
+
+        if self._looks_like_meta_response(cleaned):
+            return (
+                "I could not generate a user-facing answer this time. "
+                "Please ask again in one sentence, and I will provide general health information."
+            )
+
+        return cleaned
+
+    def _strip_prompt_echo_lines(self, text: str) -> str:
+        """Remove common instruction/context headings that should not appear in final answers."""
+        filtered_lines = []
+        for line in text.splitlines():
+            stripped = line.strip()
+            lowered = stripped.lower()
+
+            if not stripped:
+                filtered_lines.append(line)
+                continue
+
+            if any(marker in lowered for marker in self._PROMPT_ECHO_MARKERS):
+                continue
+
+            # Drop line prefixes like "User Question: ..." that sometimes leak through.
+            if re.match(r"^(user question|retrieved medical context)\s*:\s*", lowered):
+                continue
+
+            filtered_lines.append(line)
+
+        cleaned = "\n".join(filtered_lines).strip()
+        return cleaned if cleaned else text
+
+    def _looks_like_meta_response(self, text: str) -> bool:
+        """Detect rubric-style or evaluator-style output that is not a user answer."""
+        lowered = text.strip().lower()
+        if not lowered:
+            return True
+
+        return any(marker in lowered for marker in self._META_RESPONSE_MARKERS)
+
+    def _compose_ollama_prompt(
+        self,
+        user_message: str,
+        conversation_history: List[Dict[str, str]],
+    ) -> str:
+        """Flatten conversation history into a single prompt for Ollama generate API."""
+        prompt = ""
+        if conversation_history:
+            history_lines = []
+            for msg in conversation_history[-20:]:
+                role = msg.get("role", "").strip().lower()
+                content = msg.get("content", "").strip()
+                if not content or role not in {"user", "assistant"}:
+                    continue
+                speaker = "User" if role == "user" else "Assistant"
+                history_lines.append(f"{speaker}: {content}")
+            if history_lines:
+                prompt += "Previous conversation:\n" + "\n".join(history_lines) + "\n\n"
+        
+        prompt += f"### Instruction:\n{user_message}\n\n### Response:\n"
+        return prompt
     
     async def _get_openai_response(
         self, 
@@ -112,7 +233,7 @@ Please answer based on the provided context."""
             response = self.openai_client.chat.completions.create(
                 model=self.model,
                 messages=messages,
-                temperature=0.7,
+                temperature=0.2,
                 max_tokens=1000
             )
             
@@ -144,7 +265,7 @@ Please answer based on the provided context."""
                 max_tokens=1000,
                 system=system_prompt,
                 messages=messages,
-                temperature=0.7
+                temperature=0.2
             )
             
             return response.content[0].text
@@ -158,42 +279,71 @@ Please answer based on the provided context."""
         user_message: str,
         conversation_history: List[Dict[str, str]]
     ) -> str:
-        """Get response from Ollama API"""
+        """Get response from Ollama API using generate endpoint for better template control."""
         try:
-            # Build messages array
-            messages = []
-            
-            # Add system message
-            messages.append({"role": "system", "content": system_prompt})
-            
-            # Add conversation history
-            messages.extend(conversation_history)
-            
-            # Add current user message
-            messages.append({"role": "user", "content": user_message})
-            
-            # Call Ollama API
-            async with httpx.AsyncClient(timeout=60.0) as client:
+            prompt = self._compose_ollama_prompt(user_message, conversation_history)
+
+            base_payload = {
+                "model": self.model,
+                "system": system_prompt,
+                "prompt": prompt,
+                "stream": False,
+                "options": {
+                    "temperature": 0.2,
+                    "top_p": 0.9,
+                    "repeat_penalty": 1.15,
+                    "num_predict": 600,
+                    "num_ctx": 4096,
+                    "stop": ["### Instruction:", "### Input:", "User:", "Assistant:"]
+                },
+            }
+
+            # Call Ollama generate API
+            async with httpx.AsyncClient(timeout=180.0) as client:
                 response = await client.post(
-                    f"{self.ollama_base_url}/api/chat",
-                    json={
-                        "model": self.model,
-                        "messages": messages,
-                        "stream": False,
-                        "options": {
-                            "temperature": 0.7,
-                            "num_predict": 1000
-                        }
-                    }
+                    f"{self.ollama_base_url}/api/generate",
+                    json=base_payload,
                 )
                 response.raise_for_status()
                 result = response.json()
-                print(f"Ollama response: {result}")  # Debug logging
-                return result["message"]["content"]
+
+                text = result.get("response", "").strip()
+                if self._looks_like_meta_response(text):
+                    retry_payload = {
+                        **base_payload,
+                        "system": (
+                            "You are a healthcare information assistant. "
+                            "Answer directly in plain language with educational information only. "
+                            "No meta commentary."
+                        ),
+                        "prompt": (
+                            "Answer the current user health question directly. "
+                            "Do not evaluate previous answers. "
+                            "Do not repeat instructions or context headers.\n\n"
+                            f"Current user question:\n{user_message}"
+                        ),
+                        "options": {
+                            "temperature": 0.1,
+                            "top_p": 0.9,
+                            "repeat_penalty": 1.15,
+                            "num_predict": 500,
+                            "stop": ["### Instruction:", "### Input:", "User:", "Assistant:"]
+                        },
+                    }
+                    retry_response = await client.post(
+                        f"{self.ollama_base_url}/api/generate",
+                        json=retry_payload,
+                    )
+                    retry_response.raise_for_status()
+                    retry_result = retry_response.json()
+                    text = retry_result.get("response", text).strip()
+
+                print(f"Ollama response: {text}")
+                return text
         
         except Exception as e:
             print(f"Ollama error: {str(e)}")  # Debug logging
-            raise Exception(f"Ollama API error: {str(e)}")
+            return "The Ollama model failed to generate a response (this is often due to a CUDA or memory limit error). Please check your Ollama installation and ensure the model `meditron:7b` runs successfully on your hardware."
 
 
 # Global LLM service instance

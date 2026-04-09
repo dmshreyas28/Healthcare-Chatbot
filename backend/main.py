@@ -116,18 +116,23 @@ async def chat(request: ChatRequest):
         
         # Retrieve RAG context if enabled
         context = None
+        use_rag = False
         if settings.enable_rag:
             try:
-                context = rag_service.retrieve_context(user_message)
+                use_rag = rag_service.should_use_rag(user_message)
+                if use_rag:
+                    context = rag_service.retrieve_context(user_message)
             except Exception as e:
                 print(f"RAG retrieval error: {e}")
                 # Continue without RAG if it fails
+                use_rag = False
+                context = None
         
         # Get LLM response
         response = await llm_service.get_response(
             user_message=user_message,
             conversation_history=conversation_history,
-            use_rag=settings.enable_rag and context is not None,
+            use_rag=use_rag and context is not None,
             context=context
         )
         
