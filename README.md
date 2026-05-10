@@ -3,7 +3,19 @@
 ## Project Overview
 This project is a web-based Healthcare Assistant Chatbot built as part of an academic project. It provides health-related information and guidance using a Large Language Model (LLM) and Retrieval-Augmented Generation (RAG) tailored for the Indian healthcare context. The system is designed to offer preventive healthcare tips and explain medical terms without diagnosing diseases or prescribing medication.
 
+## Project Structure
+```text
+backend/
+frontend/
+colab/
+└── meditron_server.ipynb
+```
+
 ## Architecture Diagram
+
+User → Frontend → FastAPI Backend → Google Colab (Meditron-7B via tunnel)
+                                  ↘ ChromaDB (RAG)
+
 ```text
 +-------------------+        +--------------------+       +-----------------------+
 |                   |        |                    |       | Google Colab (GPU)    |
@@ -64,13 +76,21 @@ Since the Meditron-7B model requires significant compute, it is hosted on Google
 1. Open the `frontend/index.html` file in any modern web browser.
 2. The UI will automatically connect to the backend running at `http://localhost:8000`.
 
+## Running the Model (Google Colab)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1jKsftDux19rmSdR-5_vg1fD9MtvJs_9I)
+- Step 1: Open the notebook via the badge above
+- Step 2: Run all cells — the notebook starts Ollama and loads Meditron-7B
+- Step 3: Copy the tunnel URL printed at the end of the notebook
+- Step 4: Paste it into your local .env as OLLAMA_BASE_URL=<tunnel_url>
+- Step 5: Start the backend normally with uvicorn
+
 ## Environment Variables
 Create a `.env` file in the `backend/` directory with the following variables:
 
 | Variable | Description | Example |
 | --- | --- | --- |
 | `LLM_PROVIDER` | The LLM provider to use | `ollama` |
-| `OLLAMA_BASE_URL` | The public URL of the Colab tunnel | `https://<your-tunnel-url>` |
+| `OLLAMA_BASE_URL` | Public tunnel URL from Colab notebook (copy after running all cells) | `https://<your-tunnel-url>` |
 | `OLLAMA_MODEL` | The model to use | `meditron:7b` |
 | `ENABLE_RAG` | Whether to enable RAG functionality | `true` |
 
