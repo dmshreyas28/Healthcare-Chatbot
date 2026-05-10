@@ -133,8 +133,11 @@ Give a direct user-facing answer in plain language. Do not repeat instructions."
                 "Please try rephrasing your question."
             )
 
+        print(f"DEBUG SANITIZE INPUT: {repr(response[:200])}")
+
         cleaned = response.strip().strip('"').strip()
         cleaned = self._strip_prompt_echo_lines(cleaned)
+        print(f"AFTER SANITIZE: {repr(cleaned)}")
 
         lowered = cleaned.lower()
         if any(phrase in lowered for phrase in self._DIAGNOSIS_PHRASES):
@@ -151,12 +154,15 @@ Give a direct user-facing answer in plain language. Do not repeat instructions."
                 "for personal medical advice."
             )
 
-        if self._looks_like_meta_response(cleaned):
+        meta_check = self._looks_like_meta_response(cleaned)
+        print(f"DEBUG META CHECK: {meta_check} for text: {repr(cleaned[:100])}")
+        if meta_check:
             return (
                 "I could not generate a user-facing answer this time. "
                 "Please ask again in one sentence, and I will provide general health information."
             )
 
+        print(f"DEBUG SANITIZE OUTPUT: {repr(cleaned[:200])}")
         return cleaned
 
     def _strip_prompt_echo_lines(self, text: str) -> str:
@@ -195,21 +201,22 @@ Give a direct user-facing answer in plain language. Do not repeat instructions."
         user_message: str,
         conversation_history: List[Dict[str, str]],
     ) -> str:
-        """Flatten conversation history into a single prompt for Ollama generate API."""
+        """Prompt format optimized for Llama2."""
         prompt = ""
+        
         if conversation_history:
-            history_lines = []
-            for msg in conversation_history[-20:]:
+            for msg in conversation_history[-4:]:
                 role = msg.get("role", "").strip().lower()
                 content = msg.get("content", "").strip()
                 if not content or role not in {"user", "assistant"}:
                     continue
-                speaker = "User" if role == "user" else "Assistant"
-                history_lines.append(f"{speaker}: {content}")
-            if history_lines:
-                prompt += "Previous conversation:\n" + "\n".join(history_lines) + "\n\n"
+                if role == "user":
+                    prompt += f"User: {content}\n"
+                else:
+                    prompt += f"Assistant: {content}\n"
         
-        prompt += f"### Instruction:\n{user_message}\n\n### Response:\n"
+        prompt += f"User: {user_message}\n"
+        prompt += "Assistant: "
         return prompt
     
     async def _get_openai_response(
@@ -289,17 +296,23 @@ Give a direct user-facing answer in plain language. Do not repeat instructions."
                 "prompt": prompt,
                 "stream": False,
                 "options": {
-                    "temperature": 0.2,
-                    "top_p": 0.9,
-                    "repeat_penalty": 1.15,
-                    "num_predict": 600,
-                    "num_ctx": 4096,
-                    "stop": ["### Instruction:", "### Input:", "User:", "Assistant:"]
+                    "temperature": 0.3,
+                    "top_p": 0.85,
+                    "repeat_penalty": 1.1,
+                    "num_predict": 250,
+                    "num_ctx": 2048,
+                    "stop": ["User:", "\n\nUser:", "Human:", "Assistant:\n\n"]
                 },
             }
 
             # Call Ollama generate API
-            async with httpx.AsyncClient(timeout=180.0) as client:
+            headers = {
+                "Content-Type": "application/json",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "CF-Access-Client-Id": "bypass",
+                "bypass-tunnel-reminder": "true",
+            }
+            async with httpx.AsyncClient(timeout=180.0, headers=headers) as client:
                 response = await client.post(
                     f"{self.ollama_base_url}/api/generate",
                     json=base_payload,
@@ -308,6 +321,7 @@ Give a direct user-facing answer in plain language. Do not repeat instructions."
                 result = response.json()
 
                 text = result.get("response", "").strip()
+                print(f"RAW Ollama response: {repr(text)}")
                 if self._looks_like_meta_response(text):
                     retry_payload = {
                         **base_payload,
@@ -342,8 +356,10 @@ Give a direct user-facing answer in plain language. Do not repeat instructions."
                 return text
         
         except Exception as e:
-            print(f"Ollama error: {str(e)}")  # Debug logging
-            return "The Ollama model failed to generate a response (this is often due to a CUDA or memory limit error). Please check your Ollama installation and ensure the model `meditron:7b` runs successfully on your hardware."
+            import traceback
+            print(f"Ollama error FULL: {str(e)}")
+            print(f"Ollama traceback: {traceback.format_exc()}")
+            return f"Debug error: {str(e)}"
 
 
 # Global LLM service instance
