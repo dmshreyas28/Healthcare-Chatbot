@@ -43,7 +43,7 @@ Always include safety disclaimers when appropriate.
 ## System Architecture
 - Frontend: Web-based chat interface
 - Backend: Python API server
-- LLM Service: External API-based LLM
+- LLM Service: Meditron-7B model hosted on Google Colab (via Ollama and public tunnel)
 - RAG Module (optional):
   - Chunk trusted healthcare documents
   - Generate embeddings
@@ -151,9 +151,9 @@ When generating responses:
 - [x] **healthcare_data/indian_health_info.txt** - Knowledge base with Indian healthcare context
 
 #### Phase 2.1: LLM Model Setup
-- [x] Downloaded **Meditron-7B-Chat** (4.1GB) - Medical domain-specific model
-- [x] Imported Meditron model into Ollama
-- [x] Configured backend to use Ollama with meditron:7b
+- [x] Set up Google Colab notebook to host **Meditron-7B-Chat** on free GPU
+- [x] Configured Colab to run Ollama and expose it via a public tunnel (ngrok/Cloudflare)
+- [x] Configured backend (`OLLAMA_BASE_URL`) to use the remote Colab tunnel
 - [x] Successfully tested model responses
 
 #### Phase 2.2: RAG System Implementation
@@ -182,17 +182,17 @@ When generating responses:
 - [x] Emergency numbers updated to Indian standards (108 for ambulance)
 - [x] Awareness of prevalent health issues in India
 
-### ⏳ IN PROGRESS / PENDING
+#### Phase 3: Frontend Development (COMPLETED)
+- [x] Create `frontend/index.html` - Main chat interface
+- [x] Create `frontend/styles.css` - Healthcare-themed styling
+- [x] Create `frontend/script.js` - Chat functionality and API integration
+- [x] Add medical disclaimer banner
+- [x] Implement message history display
+- [x] Add loading indicators
+- [x] Make responsive design (mobile-friendly)
+- [x] Test cross-browser compatibility
 
-#### Phase 3: Frontend Development (NOT STARTED)
-- [ ] Create `frontend/index.html` - Main chat interface
-- [ ] Create `frontend/styles.css` - Healthcare-themed styling
-- [ ] Create `frontend/script.js` - Chat functionality and API integration
-- [ ] Add medical disclaimer banner
-- [ ] Implement message history display
-- [ ] Add loading indicators
-- [ ] Make responsive design (mobile-friendly)
-- [ ] Test cross-browser compatibility
+### ⏳ IN PROGRESS / PENDING
 
 #### Phase 4: Docker Containerization (NOT STARTED)
 - [ ] Create `Dockerfile` for backend
@@ -235,14 +235,15 @@ When generating responses:
 ## Current System Status
 
 ### Working Components
+✅ **Frontend UI** - Functional chat interface with disclaimers and responsive design
 ✅ **Backend API** - Fully functional on http://localhost:8000  
-✅ **LLM Integration** - Meditron-7B medical model via Ollama  
+✅ **LLM Integration** - Meditron-7B medical model via Ollama on Google Colab (tunneled to local backend)
 ✅ **RAG System** - ChromaDB with 16 Indian healthcare documents  
 ✅ **Safety Features** - Emergency detection, disclaimers, India-aware prompts  
 ✅ **API Endpoints** - /chat, /health, /disclaimer all working  
 
 ### Technology Choices Made
-- **LLM Provider**: Ollama (local, free, privacy-friendly)
+- **LLM Provider**: Ollama hosted on Google Colab (remote GPU, free, accessible via tunnel)
 - **LLM Model**: Meditron-7B-Chat (medical domain-specific)
 - **Backend Framework**: FastAPI
 - **Vector Database**: ChromaDB
@@ -250,10 +251,9 @@ When generating responses:
 - **Geographic Focus**: India (medications, healthcare system, emergency services)
 
 ### Next Immediate Steps
-1. Build frontend chat interface (Phase 3)
-2. Create Docker containers (Phase 4)
-3. Set up CI/CD pipeline (Phase 5)
-4. Complete documentation (Phase 6)
+1. Create Docker containers (Phase 4)
+2. Set up CI/CD pipeline (Phase 5)
+3. Complete documentation (Phase 6)
 
 ---
 
